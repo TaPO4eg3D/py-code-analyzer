@@ -10,6 +10,7 @@ Serves as a backend for such refactor actions like:
 ## Dependencies
 
 - Treesitter
+- Python 3.10+
 
 ## TODO
 
