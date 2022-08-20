@@ -1,0 +1,5 @@
+.venv
+build
+vendor
+__pycache__
+tags
