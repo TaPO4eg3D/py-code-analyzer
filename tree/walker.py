@@ -88,42 +88,7 @@ class TreeWalker:
         self._parse_block(block, start_node=self.cursor.node)
 
         self._step_in(block)
-        self._traverse_blocked_entity(block)
-
-    def _traverse_blocked_entity(self, block: Block):
-        # TODO: Decompose to be more specific
-
-        self.cursor.goto_first_child()
-
-        while True:
-            if self._node_name == 'body':
-                break
-
-            if not self.cursor.goto_next_sibling():
-                raise RuntimeError('Unable to find the Entity body!')
-
-        # Step into the body
-        self.cursor.goto_first_child()
-
-        while True:
-            match self._node_type:
-                case 'call':
-                    self._traverse_call(block)
-                case 'expression_statement':
-                    self._traverse_expression(block)
-                case 'if_statement' | 'for_statement' | 'while_statement':
-                    # TODO: Write a separate functions for traversal
-                    # since loops or conditions can call functions in their definitions
-                    self._traverse_blocked_entity(block)
-
-            if not self.cursor.goto_next_sibling():
-                break
-
-        # Step out of the body
-        self.cursor.goto_parent()
-
-        # Step out of the entity
-        self.cursor.goto_parent()
+        self._traverse_general(block)
 
     def _traverse_class_definition(self, block: Block):
         pass
@@ -193,17 +158,8 @@ class TreeWalker:
             match (self._node_name, self._node_type):
                 case ('function', ntype):
                     self._parse_function_call(ntype, block)
-                case ('arguments', 'argument_list'):
-                    self.cursor.goto_first_child()
-
-                    while True:
-                        if self._node_type == 'call':
-                            self._traverse_call(block)
-
-                        if not self.cursor.goto_next_sibling():
-                            break
-
-                    self.cursor.goto_parent()
+                case _:
+                    self._traverse_general(block)
 
             if not self.cursor.goto_next_sibling():
                 break
@@ -214,7 +170,7 @@ class TreeWalker:
         callable_name = self.cursor.node.text
 
         if func_type == 'attribute':
-            callable_name = callable_name.split('.')[0]
+            callable_name = callable_name.split(b'.')[0]
         elif func_type != 'identifier':
             raise NotImplemented()
 
@@ -239,6 +195,32 @@ class TreeWalker:
         )
         block.uses.append(undefined_block)
 
+    def _traverse_general(self, block: Block):
+        while True:
+            match (self._node_name, self._node_type):
+                case (_, 'assignment'):
+                    self._traverse_assignment(block)
+                case (_, 'call'):
+                    self._traverse_call(block)
+                case (_, 'identifier'):
+                    self._parse_identifier_usage(block)
+                # Skip details of function declaration
+                case ('name', 'identifier'):
+                    pass
+                case (_, 'parameters'):
+                    pass
+                # We don't need parse definitions on this level
+                case (_, 'function_definition' | 'class_definition' | 'def' | 'class'):
+                    pass
+                case _:
+                    if self.cursor.goto_first_child():
+                        self._traverse_general(block)
+
+                        self.cursor.goto_parent()
+
+            if not self.cursor.goto_next_sibling():
+                break
+
     def _traverse_assignment(self, block: Block):
         self.cursor.goto_first_child()
 
@@ -251,15 +233,16 @@ class TreeWalker:
                     self._parse_pattern_list(block)
                 case ('left', _):
                     raise NotImplemented()
-                case ('right', 'call'):
-                    self._traverse_call(block)
                 case ('right', _):
-                    pass
+                    self._traverse_general(block)
 
             if not self.cursor.goto_next_sibling():
                 break
 
         self.cursor.goto_parent()
+
+    def _parse_identifier_usage(self, block: Block):
+        pass
 
     def _parse_pattern_list(self, block: Block):
         self.cursor.goto_first_child()
@@ -277,23 +260,6 @@ class TreeWalker:
                     block.variable_table[var.name] = var
 
                     self.cursor.goto_parent()
-
-            if not self.cursor.goto_next_sibling():
-                break
-
-        self.cursor.goto_parent()
-
-    def _traverse_expression(self, block: Block):
-        self.cursor.goto_first_child()
-
-        while True:
-            node_type = self.cursor.node.type
-
-            match node_type:
-                case 'assignment':
-                    self._traverse_assignment(block)
-                case 'call':
-                    self._traverse_call(block)
 
             if not self.cursor.goto_next_sibling():
                 break
