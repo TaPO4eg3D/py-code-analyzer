@@ -110,7 +110,18 @@ class TreeWalker:
         inner_block.name = f'inner_block__{inner_block.starts_at}_{inner_block.ends_at}'
         block.block_table[inner_block.name] = inner_block
 
-        self.cursor.goto_first_child()
+        if self._node_type == 'for_statement':
+            # The left side of the for_statement is basically assignment
+            self.cursor.goto_first_child()
+            self._traverse_assignment(inner_block)
+
+            # Skip the left node completly
+            self.cursor.goto_first_child()
+            while self._node_name != 'right':
+                self.cursor.goto_next_sibling()
+        else:
+            self.cursor.goto_first_child()
+
         self._traverse_general(inner_block)
 
         # Give back control when stumbles upon "block" node
