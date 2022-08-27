@@ -14,6 +14,8 @@ class BlockType(str, Enum):
     Module = 'Module'
     Class = 'Class'
     Function = 'Function'
+    Loop = 'Loop'
+    Condition = 'Condition'
     Undefined = 'Object'
 
 
@@ -25,8 +27,7 @@ class Block:
     # Additional info about the Block related to it's type
     data: typing.Union['ModuleBlockData', 'FunctionBlockData', 'ClassBlockData'] | None = None
 
-    # All blocks (Module | Function | Class) has an associated name with
-    # it but we can set it to None since Block cannot be Undefined
+    # Loop and Conditions do not have names
     name: str | None = None
 
     # Those two fields can help to detect when the User tries
@@ -37,7 +38,7 @@ class Block:
 
     parent: typing.Optional['Block'] = None
 
-    # Function calls, class intializations, etc.
+    # Function calls, class initializations, etc.
     uses: list['Block'] = field(
         default_factory=list,
     )
