@@ -52,7 +52,7 @@ class TreeWalker:
         self.cursor.goto_parent()
         self.cursor.goto_first_child()
 
-    def _parse_block(self, block: Block, *, start_node: Node | None = None):
+    def _parse_block(self, block: Block):
         self.cursor.goto_first_child()
 
         while True:
@@ -71,16 +71,16 @@ class TreeWalker:
 
         self._rewind()
 
-        # TODO: Figure out why it happens
-        if block.block_table:
-            # That's fine to loop it like this since Python dict is ordered
-            # TODO: Rewrite the loop to be index-based
-            for node_name, block_item in block.block_table.items():
-                # TODO: Add support for classes
-                if block_item.type == BlockType.Function:
-                    self._traverse_function_definition(block_item)
+        while True:
+            match self._node_type:
+                case 'function_definition':
+                    function_name = self._parse_function_name()
+                    function = block.block_table[function_name]
 
-                self.cursor.goto_next_sibling()
+                    self._traverse_function_definition(function)
+
+            if not self.cursor.goto_next_sibling():
+                break
 
         self.cursor.goto_parent()
 
@@ -89,7 +89,6 @@ class TreeWalker:
 
         self._traverse_general(block)
 
-        # Give back control when stumbles upon "block" node
         # General travers gives the control back when it stumbles upon the "block" node
         self._parse_block(block)
 
@@ -134,8 +133,19 @@ class TreeWalker:
 
         self.cursor.goto_parent()
 
-    def _traverse_class_definition(self, block: Block):
-        pass
+    def _parse_function_name(self) -> str:
+        self.cursor.goto_first_child()
+        self.cursor.goto_next_sibling()
+
+        if self.cursor.node.type != 'identifier':
+            raise RuntimeError(
+                f'Error in Function declaration!',
+            )
+
+        function_name = self.cursor.node.text
+        self.cursor.goto_parent()
+
+        return function_name
 
     def _parse_function_definition(self, parent: Block) -> Block:
         function = Block(
@@ -145,19 +155,7 @@ class TreeWalker:
             starts_at=self.cursor.node.start_point[0],
             ends_at=self.cursor.node.end_point[0],
         )
-
-        self.cursor.goto_first_child()
-        self.cursor.goto_next_sibling()
-
-        if self.cursor.node.type != 'identifier':
-            breakpoint()
-            raise RuntimeError(
-                f'Error in Function declaration on {function.starts_at}',
-            )
-        else:
-            function.name = self.cursor.node.text
-
-        self.cursor.goto_parent()
+        function.name = self._parse_function_name()
 
         if obj := parent.block_table.get(function.name):
             raise RuntimeError(
