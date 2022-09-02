@@ -1,6 +1,6 @@
 from tree_sitter import Language, Parser
 
-from tree.walker import TreeWalker
+from tree.walker import TreeWalker, TreeDebugger
 
 Language.build_library('build/my-languages.so', ('vendor/tree-sitter-python',))
 
@@ -19,5 +19,6 @@ cur = tree.walk()
 
 walker = TreeWalker(cur)
 m = walker.parse_file(FILE_PATH)
+d = TreeDebugger()
 
-print('Done!')
+d.show(m)

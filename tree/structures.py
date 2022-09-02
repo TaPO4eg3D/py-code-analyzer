@@ -7,7 +7,7 @@ from tree_sitter import Node
 
 @dataclass
 class Variable:
-    name: str
+    name: bytes
 
 
 class BlockType(str, Enum):
@@ -28,7 +28,7 @@ class Block:
     data: typing.Union['ModuleBlockData', 'FunctionBlockData', 'ClassBlockData'] | None = None
 
     # Loop and Conditions do not have names
-    name: str | None = None
+    name: bytes | None = None
 
     # Those two fields can help to detect when the User tries
     # to call a function that exits in the file but wasn't declared yet
@@ -43,14 +43,14 @@ class Block:
         default_factory=list,
     )
 
-    variable_table: dict[str, Variable] = field(
+    variable_table: dict[bytes, Variable] = field(
         default_factory=dict,
     )
-    block_table: dict[str, 'Block'] = field(
+    block_table: dict[bytes, 'Block'] = field(
         default_factory=dict,
     )
 
-    def get_variable_in_scope(self, name: str) -> typing.Optional[Variable]:
+    def get_variable_in_scope(self, name: bytes) -> typing.Optional[Variable]:
         parent = self
         table = self.variable_table
 
@@ -63,7 +63,7 @@ class Block:
 
         return None
 
-    def get_block_in_scope(self, name: str) -> typing.Optional['Block']:
+    def get_block_in_scope(self, name: bytes) -> typing.Optional['Block']:
         parent = self.parent
         table = self.block_table
 

@@ -1,7 +1,53 @@
-from tree_sitter import TreeCursor, Node
+from tree_sitter import TreeCursor
 
 from .consts import BUILTINS
 from .structures import Variable, BlockType, Block, ModuleBlockData
+
+
+class TreeDebugger:
+    def show(self, block: Block):
+        self._show(block)
+
+    def _show(self, block: Block, level = 0):
+        def lprint(message: str, indent: int = 0):
+            print('\t' * level + ' ' * indent + str(message))
+
+        has_functions = False
+        has_classes = False
+        has_variables = len(block.variable_table)
+        has_deps = len(block.uses)
+
+        for _, inner_block in block.block_table.items():
+            match inner_block.type:
+                case BlockType.Function:
+                    has_functions = True
+                case BlockType.Class:
+                    has_classes = True
+
+        if has_functions:
+            lprint('Functions: ')
+            for block_name, func_block in block.block_table.items():
+                if func_block.type == BlockType.Function:
+                    lprint('Name: ' + block_name.decode('utf-8'), 2)
+                    self._show(func_block, level + 1)
+
+        if has_classes:
+            lprint('Classes: ')
+            for block_name, class_block in block.block_table.items():
+                if class_block.type == BlockType.Class:
+                    lprint('Name: ' + block_name.decode('utf-8'), 2)
+                    self._show(class_block, level + 1)
+
+        if has_variables:
+            lprint('Declared_variables: ')
+            for var_name, _ in block.variable_table.items():
+                lprint('- ' + var_name.decode('utf-8'), 2)
+
+        # TODO: Make it recursive to count inner_block deps
+        if has_deps:
+            lprint('Dependencies:')
+            for dep in block.uses:
+                lprint(f'- {dep.type}: ' + str(dep.name), 2)
 
 
 class TreeWalker:
@@ -34,19 +80,8 @@ class TreeWalker:
         return self.cursor.node.type
 
     @property
-    def _node_name(self) -> str:
+    def _node_name(self) -> str | None:
         return self.cursor.current_field_name()
-
-    def _step_in(self, step_point: Block | Node):
-        # TODO: Add TreeCursor reset binding
-        if isinstance(step_point, Node):
-            node = step_point
-        else:
-            assert step_point.root_node
-            node = step_point.root_node
-
-        self.cursor = node.walk()  # type: ignore
-        self.cursor.goto_first_child()
 
     def _rewind(self):
         self.cursor.goto_parent()
@@ -78,6 +113,11 @@ class TreeWalker:
                     function = block.block_table[function_name]
 
                     self._traverse_function_definition(function)
+                case 'class_definition':
+                    class_name = self._parse_class_name()
+                    klass = block.block_table[class_name]
+
+                    self._traverse_class_definition(klass)
 
             if not self.cursor.goto_next_sibling():
                 break
@@ -98,6 +138,9 @@ class TreeWalker:
 
         self.cursor.goto_parent()
 
+    def _traverse_class_definition(self, block: Block):
+        pass
+
     def _traverse_inner_block_statement(self, block_type: BlockType, block: Block):
         inner_block = Block(
             type=block_type,
@@ -106,7 +149,7 @@ class TreeWalker:
             ends_at=self.cursor.node.end_point[0],
             root_node=self.cursor.node,
         )
-        inner_block.name = f'inner_block__{inner_block.starts_at}_{inner_block.ends_at}'
+        inner_block.name = f'inner_block__{inner_block.starts_at}_{inner_block.ends_at}'.encode('utf-8')
         block.block_table[inner_block.name] = inner_block
 
         if self._node_type == 'for_statement':
@@ -133,7 +176,7 @@ class TreeWalker:
 
         self.cursor.goto_parent()
 
-    def _parse_function_name(self) -> str:
+    def _parse_function_name(self) -> bytes:
         self.cursor.goto_first_child()
         self.cursor.goto_next_sibling()
 
@@ -164,6 +207,20 @@ class TreeWalker:
 
         return function
 
+    def _parse_class_name(self) -> bytes:
+        self.cursor.goto_first_child()
+        self.cursor.goto_next_sibling()
+
+        if self.cursor.node.type != 'identifier':
+            raise RuntimeError(
+                f'Error in Class declaration!',
+            )
+
+        class_name = self.cursor.node.text
+        self.cursor.goto_parent()
+
+        return class_name
+
     def _parse_class_definition(self, parent: Block) -> Block:
         klass = Block(
             type=BlockType.Class,
@@ -172,19 +229,8 @@ class TreeWalker:
             starts_at=self.cursor.node.start_point[0],
             ends_at=self.cursor.node.end_point[0],
         )
-
-        self.cursor.goto_first_child()
-        self.cursor.goto_next_sibling()
-
-        if self.cursor.node.type != 'identifier':
-            breakpoint()
-            raise RuntimeError(
-                f'Error in Class declaration on {klass.starts_at}',
-            )
-        else:
-            klass.name = self.cursor.node.text
-
-        self.cursor.goto_parent()
+        klass.name = self._parse_class_name()
+        klass.variable_table[b'self'] = Variable(name=b'self')
 
         if obj := parent.block_table.get(klass.name):
             raise RuntimeError(
@@ -260,7 +306,7 @@ class TreeWalker:
             match (self._node_name, self._node_type):
                 case ('left', 'identifier'):
                     var = Variable(name=self.cursor.node.text)
-                    block.variable_table[var.name] = var
+                    block.variable_table[self.cursor.node.text] = var
                 case ('left', 'pattern_list' | 'tuple_pattern'):
                     self._parse_pattern_list(block)
                 case ('left', _):
@@ -280,13 +326,13 @@ class TreeWalker:
             match self._node_type:
                 case 'identifier':
                     var = Variable(name=self.cursor.node.text)
-                    block.variable_table[var.name] = var
+                    block.variable_table[self.cursor.node.text] = var
                 case 'list_splat_pattern':
                     self.cursor.goto_first_child()
                     self.cursor.goto_next_sibling()
 
                     var = Variable(name=self.cursor.node.text)
-                    block.variable_table[var.name] = var
+                    block.variable_table[self.cursor.node.text] = var
 
                     self.cursor.goto_parent()
 
