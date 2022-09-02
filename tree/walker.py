@@ -139,7 +139,18 @@ class TreeWalker:
         self.cursor.goto_parent()
 
     def _traverse_class_definition(self, block: Block):
-        pass
+        self.cursor.goto_first_child()
+
+        self._traverse_general(block)
+
+        # General travers gives the control back when it stumbles upon the "block" node
+        self._parse_block(block)
+
+        self.cursor.goto_first_child()
+        self._traverse_general(block)
+        self.cursor.goto_parent()
+
+        self.cursor.goto_parent()
 
     def _traverse_inner_block_statement(self, block_type: BlockType, block: Block):
         inner_block = Block(
@@ -276,7 +287,7 @@ class TreeWalker:
                 case ('name', 'identifier'):
                     pass
                 case (_, 'parameters'):
-                    pass
+                    self._traverse_function_params(block)
                 case (_, 'function_definition' | 'class_definition' | 'def' | 'class'):
                     pass
                 case (_, 'if_statement' | 'for_statement' | 'while_statement'):
@@ -298,6 +309,25 @@ class TreeWalker:
 
             if not self.cursor.goto_next_sibling():
                 break
+    
+    def _traverse_function_params(self, block: Block):
+        assert block.type == BlockType.Function
+        self.cursor.goto_first_child()
+        while True:
+            match self._node_type:
+                case 'identifier':
+                    var = Variable(name=self.cursor.node.text)
+                    block.variable_table[var.name] = var
+                case 'typed_parameter' | 'default_parameter':
+                    self.cursor.goto_first_child()
+                    var = Variable(name=self.cursor.node.text)
+                    block.variable_table[var.name] = var
+                    self.cursor.goto_parent()
+
+            if not self.cursor.goto_next_sibling():
+                break
+        
+        self.cursor.goto_parent()
 
     def _traverse_assignment(self, block: Block):
         self.cursor.goto_first_child()
@@ -306,7 +336,7 @@ class TreeWalker:
             match (self._node_name, self._node_type):
                 case ('left', 'identifier'):
                     var = Variable(name=self.cursor.node.text)
-                    block.variable_table[self.cursor.node.text] = var
+                    block.variable_table[var.name] = var
                 case ('left', 'pattern_list' | 'tuple_pattern'):
                     self._parse_pattern_list(block)
                 case ('left', _):
